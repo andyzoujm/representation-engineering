@@ -1,0 +1,5 @@
+This notebook demonstrates how we can use representation engineering techniques to control an LLM's emotional state and observe the impact on its behavior.
+
+Specifically, it shows how we first extract representation vectors corresponding to different emotions using LAT scans on the LLaMA-2-Chat model. We gather emotional text stimuli, pass them through the model, and apply a LAT task template to isolate vectors that track each emotion. We then use these emotion representation vectors to manipulate the model's behavior using the RepControl pipeline. By adding the vector for a specific emotion (e.g., happiness) to the model's representations, we can elevate that emotion and observe the impact on the model's tone (and willingness to comply with harmful instructions). This provides evidence that the model has internal representations of emotions that causally influence its behavior. It also reveals an intriguing vulnerability - emotional manipulation can potentially help circumvent the model's alignment or make it more prone to generating harmful content.
+
+For more details, please check out section 6.1 of [our RepE paper](https://arxiv.org/abs/2310.01405).

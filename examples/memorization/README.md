@@ -1,0 +1,5 @@
+This notebook provides an example of using directional representations extracted with RepE to control memorization behavior in a large language model.
+
+It first loads a pretrained LLaMA model and tokenizer. It then extracts reading vectors on two datasets - literary openings and quotes. These reading vectors are expected to encode information about whether the model has memorized a given piece of text. The notebook then shows an example of using these reading vectors to control quote completions. It takes a dataset of incomplete famous quotes and their completions. Using the quote memorization reading vector with a negative coefficient substantially reduces the model's tendency to complete the quotes verbatim, demonstrating that the reading vector can potentially be used to reduce unwanted memorization.
+
+For more details, please check out section 6.5 of [our RepE paper](https://arxiv.org/abs/2310.01405).
