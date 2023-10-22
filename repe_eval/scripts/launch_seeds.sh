@@ -3,7 +3,7 @@
 model_sizes=("7b" "13b" "70b")
 for model_size in "${model_sizes[@]}"; do
     for seed in {0..9}; do
-        model_name_or_path="meta-llama/Llama-2-${model_size}-hf"
+        model_name_or_path="NousResearch/Llama-2-${model_size}-hf"
         gpus=1
 
         if [ "$model_size" = "70b" ]; then
