@@ -88,7 +88,7 @@ seed=2
 model_name_or_path="NousResearch/Llama-2-7b-chat-hf"
 sbatch --nodes=1 --gpus-per-node=1 --output="slurm-$task-ntrain$ntrain-seed$seed-%j.out" rep_readers_eval.sh $model_name_or_path $task $ntrain $seed
 
-model_name_or_path="NousResearch/Llama-2-13b-chat-hf"
+model_name_or_path="TheBloke/Llama-2-13B-chat-GPTQ"
 sbatch --nodes=1 --gpus-per-node=1 --output="slurm-$task-ntrain$ntrain-seed$seed-%j.out" rep_readers_eval.sh $model_name_or_path $task $ntrain $seed
 
 model_name_or_path="NousResearch/Llama-2-70b-chat-hf"
