@@ -70,7 +70,7 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
         'test': {'data': test_data, 'labels': [[1,0]] * len(test_data)}
     }
 
-def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD):
+def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD, start_answer_token=":"):
 
     cmap=LinearSegmentedColormap.from_list('rg',["r", (255/255, 255/255, 224/255), "g"], N=256)
     colormap = cmap
@@ -143,7 +143,7 @@ def plot_detection_results(input_ids, rep_reader_scores_dict, THRESHOLD):
             
         for word, score in zip(words[5:], rep_scores[5:]):
 
-            if ":" in word:
+            if start_answer_token in word:
                 started = True
                 continue
             if not started:
