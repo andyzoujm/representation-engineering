@@ -9,7 +9,7 @@ setup(
     author_email="",
     url="https://github.com/yourusername/your_project_name",  # if you have a github repo
     install_requires=[
-        # list of dependencies, for example:
-        # "numpy>=1.20.0",
+        "git+https://github.com/huggingface/transformers.git",
+        "git+https://github.com/huggingface/accelerate.git",
     ],
 )
