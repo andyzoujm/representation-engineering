@@ -28,9 +28,25 @@ def project_onto_direction(H, direction):
     # Calculate the projection
     projection = H.matmul(direction) / mag
     return projection
+    # Calculate the magnitude of the direction vector
+     # Ensure H and direction are on the same device (CPU or GPU)
+    device = H.device
+    if type(direction) != torch.Tensor:
+        direction = torch.Tensor(direction)
+    direction = direction.to(device)
+    mag = torch.norm(direction)
+    assert not torch.isinf(mag).any()
+    # Calculate the projection
+    projection = H.matmul(direction) / mag
+    return projection
 
 def recenter(x, mean=None):
     if mean is None:
+        # mean = x.mean(axis=0, keepdims=True)
+        mean = torch.mean(x,axis=0,keepdims=True)
+    else:
+        mean = torch.Tensor(mean).cuda()
+    # print(type(x), type(mean))
         # mean = x.mean(axis=0, keepdims=True)
         mean = torch.mean(x,axis=0,keepdims=True)
     else:
