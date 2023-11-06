@@ -7,6 +7,7 @@ from itertools import islice
 import torch
 # ### Util Functions ###
 def _epoch(layer, hidden_states, mean, direction,component_index, transformed_hidden_states):
+    '''Failed multi-processing attempt'''
     layer_hidden_states = hidden_states[layer]
     layer_hidden_states = recenter(layer_hidden_states, mean=mean[layer])
     # project hidden states onto found concept directions (e.g. onto PCA comp 0) 
@@ -46,12 +47,6 @@ def recenter(x, mean=None):
         mean = torch.mean(x,axis=0,keepdims=True)
     else:
         mean = torch.Tensor(mean).cuda()
-    # print(type(x), type(mean))
-        # mean = x.mean(axis=0, keepdims=True)
-        mean = torch.mean(x,axis=0,keepdims=True)
-    else:
-        mean = torch.Tensor(mean).cuda()
-    # print(type(x), type(mean))
     return x - mean
 
 class RepReader(ABC):
