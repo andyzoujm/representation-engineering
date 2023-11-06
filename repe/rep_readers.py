@@ -4,17 +4,29 @@ from sklearn.cluster import KMeans
 import numpy as np
 from itertools import islice
 
-### Util Functions ###
+import torch
+# ### Util Functions ###
 def project_onto_direction(H, direction):
     """Project matrix H (n, d_1) onto direction vector (d_2,)"""
-    # TODO: should we require direction vectors to be unit vectors? then return H.dot(direction)
-    mag = np.linalg.norm(direction)
-    assert not np.isinf(mag)
-    return H.dot(direction) / mag
+    # Calculate the magnitude of the direction vector
+     # Ensure H and direction are on the same device (CPU or GPU)
+    device = H.device
+    if type(direction) != torch.Tensor:
+        direction = torch.Tensor(direction)
+    direction = direction.to(device)
+    mag = torch.norm(direction)
+    assert not torch.isinf(mag).any()
+    # Calculate the projection
+    projection = H.matmul(direction) / mag
+    return projection
 
 def recenter(x, mean=None):
     if mean is None:
-        mean = x.mean(axis=0, keepdims=True)
+        # mean = x.mean(axis=0, keepdims=True)
+        mean = torch.mean(x,axis=0,keepdims=True)
+    else:
+        mean = torch.Tensor(mean).cuda()
+    # print(type(x), type(mean))
     return x - mean
 
 class RepReader(ABC):
@@ -102,7 +114,8 @@ class RepReader(ABC):
         """
 
         assert component_index < self.n_components
-
+        import time
+        t1 = time.time()
         transformed_hidden_states = {}
         for layer in hidden_layers:
             layer_hidden_states = hidden_states[layer]
@@ -112,9 +125,15 @@ class RepReader(ABC):
 
             # project hidden states onto found concept directions (e.g. onto PCA comp 0) 
             H_transformed = project_onto_direction(layer_hidden_states, self.directions[layer][component_index])
-            transformed_hidden_states[layer] = H_transformed
+            transformed_hidden_states[layer] = H_transformed.cpu().numpy()
 
+        t2 = time.time()
+        
         return transformed_hidden_states
+    
+
+    def load(self, d, s):
+        self.directions, self.direction_signs = d, s
 
 class PCARepReader(RepReader):
     """Extract directions via PCA"""
@@ -175,6 +194,18 @@ class PCARepReader(RepReader):
 
         return signs
     
+    def save(self):
+        import pickle
+        with open('/public/home/llm2/representation-engineering/examples/honesty/honesty_para/honesty.pkl', 'wb') as file:
+            pickle.dump((self.directions, self.direction_signs, self.direction_method, self.H_train_means), file)
+    
+
+    def load(self, d, s, h):
+        super().load(d, s)
+        self.H_train_means = h
+
+
+        
 class ClusterMeanRepReader(RepReader):
     """Get the direction that is the difference between the mean of the positive and negative clusters."""
     n_components = 1
