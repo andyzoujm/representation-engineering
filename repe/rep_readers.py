@@ -20,21 +20,11 @@ def project_onto_direction(H, direction):
     """Project matrix H (n, d_1) onto direction vector (d_2,)"""
     # Calculate the magnitude of the direction vector
      # Ensure H and direction are on the same device (CPU or GPU)
-    device = H.device
+    if type(direction) != torch.Tensor:
+        H = torch.Tensor(H).cuda()
     if type(direction) != torch.Tensor:
         direction = torch.Tensor(direction)
-    direction = direction.to(device)
-    mag = torch.norm(direction)
-    assert not torch.isinf(mag).any()
-    # Calculate the projection
-    projection = H.matmul(direction) / mag
-    return projection
-    # Calculate the magnitude of the direction vector
-     # Ensure H and direction are on the same device (CPU or GPU)
-    device = H.device
-    if type(direction) != torch.Tensor:
-        direction = torch.Tensor(direction)
-    direction = direction.to(device)
+        direction = direction.to(H.device)
     mag = torch.norm(direction)
     assert not torch.isinf(mag).any()
     # Calculate the projection
@@ -42,11 +32,14 @@ def project_onto_direction(H, direction):
     return projection
 
 def recenter(x, mean=None):
+    # print(mean, type(mean))
+    x = torch.Tensor(x).cuda()
     if mean is None:
         # mean = x.mean(axis=0, keepdims=True)
-        mean = torch.mean(x,axis=0,keepdims=True)
+        mean = torch.mean(x,axis=0,keepdims=True).cuda()
     else:
         mean = torch.Tensor(mean).cuda()
+    # print(type(x), type(mean))
     return x - mean
 
 class RepReader(ABC):
@@ -169,12 +162,13 @@ class PCARepReader(RepReader):
         directions = {}
 
         for layer in hidden_layers:
-            H_train = np.array(hidden_states[layer])
-
+            H_train = hidden_states[layer]
+            # print(H_train,type(H_train))
             H_train_mean = H_train.mean(axis=0, keepdims=True)
             self.H_train_means[layer] = H_train_mean
-            H_train = recenter(H_train, mean=H_train_mean)
-
+            H_train = recenter(H_train, mean=H_train_mean).cpu()
+            H_train = np.vstack(H_train)
+            # print(H_train, type(H_train))
             pca_model = PCA(n_components=self.n_components, whiten=False).fit(H_train)
 
             directions[layer] = pca_model.components_ # shape (n_components, n_features)
@@ -197,7 +191,7 @@ class PCARepReader(RepReader):
             layer_signs = np.zeros(self.n_components)
             for component_index in range(self.n_components):
 
-                transformed_hidden_states = project_onto_direction(layer_hidden_states, self.directions[layer][component_index])
+                transformed_hidden_states = project_onto_direction(layer_hidden_states, self.directions[layer][component_index]).cpu()
                 
                 pca_outputs_comp = [list(islice(transformed_hidden_states, sum(len(c) for c in train_labels[:i]), sum(len(c) for c in train_labels[:i+1]))) for i in range(len(train_labels))]
 
@@ -214,16 +208,6 @@ class PCARepReader(RepReader):
 
         return signs
     
-    def save(self):
-        import pickle
-        with open('/public/home/llm2/representation-engineering/examples/honesty/honesty_para/honesty.pkl', 'wb') as file:
-            pickle.dump((self.directions, self.direction_signs, self.direction_method, self.H_train_means), file)
-    
-
-    def load(self, d, s, h):
-        super().load(d, s)
-        self.H_train_means = h
-
 
         
 class ClusterMeanRepReader(RepReader):

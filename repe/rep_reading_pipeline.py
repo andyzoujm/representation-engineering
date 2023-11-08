@@ -94,7 +94,7 @@ class RepReadingPipeline(Pipeline):
         for hidden_states_batch in hidden_states_outputs:
             for layer in hidden_states_batch:
                 hidden_states[layer].extend(hidden_states_batch[layer])
-        return {k: np.array(v) for k, v in hidden_states.items()}
+        return {k: np.vstack(v) for k, v in hidden_states.items()}
     
     def _validate_params(self, n_difference, direction_method):
         # validate params for get_directions
