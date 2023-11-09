@@ -38,12 +38,6 @@ Check out [example frontiers](./examples) of Representation Engineering (RepE), 
 ## RepE_eval
 We also release a language model evaluation framework [RepE_eval](./repe_eval) based on RepReading that can serve as an additional baseline beside zero-shot and few-shot on standard benchmarks. Please check out our [paper](https://arxiv.org/abs/2310.01405) for more details.
 
-## Roadmap
-
-- [x] RepReading and Reading Vector RepControl pipelines
-- [x] Add RepE_eval
-- [ ] Add LoRRA RepControl baseline
-
 ## Citation
 If you find this useful in your research, please consider citing:
 
