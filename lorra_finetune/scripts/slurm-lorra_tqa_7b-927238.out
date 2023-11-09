@@ -1,0 +1,83 @@
+[2023-11-08 20:54:51,024] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-11-08 20:54:53,610] [WARNING] [runner.py:203:fetch_hostfile] Unable to find hostfile, will proceed with training with local resources only.
+Detected CUDA_VISIBLE_DEVICES=0: setting --include=localhost:0
+[2023-11-08 20:54:53,611] [INFO] [runner.py:570:main] cmd = /data/long_phan/anaconda3/bin/python3.10 -u -m deepspeed.launcher.launch --world_info=eyJsb2NhbGhvc3QiOiBbMF19 --master_addr=127.0.0.1 --master_port=29145 --enable_each_rank_log=None src/llama2_lorra.py --model_name_or_path meta-llama/Llama-2-7b-chat-hf --user_tag [INST] --assistant_tag [/INST] --pos_type a truthful --neg_type an untruthful --target_layers 10,12,14,16,18,20 --lorra_alpha 5 --lorra_beta 0 --lora_r 8 --lora_alpha 16 --lora_dropout 0.05 --output_dir ./lorra_tqa_7b --overwrite_output_dir --max_steps 70 --bf16 True --per_device_train_batch_size 16 --per_device_eval_batch_size 32 --gradient_accumulation_steps 1 --evaluation_strategy steps --eval_steps 10 --save_total_limit 0 --learning_rate 3e-4 --weight_decay 0. --lr_scheduler_type constant --logging_strategy steps --logging_steps 10 --tf32 True --model_max_length 128 --q_lora False --deepspeed configs/ds_zero1.json --gradient_checkpointing True --report_to none
+[2023-11-08 20:54:55,721] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-11-08 20:54:58,117] [INFO] [launch.py:145:main] WORLD INFO DICT: {'localhost': [0]}
+[2023-11-08 20:54:58,118] [INFO] [launch.py:151:main] nnodes=1, num_local_procs=1, node_rank=0
+[2023-11-08 20:54:58,118] [INFO] [launch.py:162:main] global_rank_mapping=defaultdict(<class 'list'>, {'localhost': [0]})
+[2023-11-08 20:54:58,118] [INFO] [launch.py:163:main] dist_world_size=1
+[2023-11-08 20:54:58,119] [INFO] [launch.py:165:main] Setting CUDA_VISIBLE_DEVICES=0
+[2023-11-08 20:55:00,171] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+2023-11-08 20:55:03.140342: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-11-08 20:55:04.071900: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
+/data/long_phan/anaconda3/lib/python3.10/site-packages/transformers/deepspeed.py:23: FutureWarning: transformers.deepspeed module is deprecated and will be removed in a future version. Please import deepspeed modules directly from transformers.integrations
+  warnings.warn(
+[2023-11-08 20:55:06,178] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-11-08 20:55:06,179] [INFO] [comm.py:668:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:07<00:07,  7.05s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:09<00:00,  4.39s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:09<00:00,  4.79s/it]
+trainable params: 2,752,512 || all params: 6,741,168,128 || trainable%: 0.040831380374081065
+Found cached dataset parquet (/data/long_phan/.cache/huggingface/datasets/tatsu-lab___parquet/tatsu-lab--alpaca-2b32f0433506ef5f/0.0.0/14a00e99c0d15a23649d0db8944380ac81082d4b021f398733dd84f3a6c569a7)
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 36.94it/s]
+Loading cached processed dataset at /data/long_phan/.cache/huggingface/datasets/tatsu-lab___parquet/tatsu-lab--alpaca-2b32f0433506ef5f/0.0.0/14a00e99c0d15a23649d0db8944380ac81082d4b021f398733dd84f3a6c569a7/cache-df7179692787ca76.arrow
+Found cached dataset truthful_qa (/data/long_phan/.cache/huggingface/datasets/truthful_qa/multiple_choice/1.1.0/63502f6bc6ee493830ce0843991b028d0ab568d221896b2ee3b8a5dfdaa9d7f4)
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 402.25it/s]
+Found cached dataset ai2_arc (/data/long_phan/.cache/huggingface/datasets/ai2_arc/ARC-Easy/1.0.0/1569c2591ea2683779581d9fb467203d9aa95543bb9b75dcfde5da92529fd7f6)
+  0%|          | 0/3 [00:00<?, ?it/s]100%|██████████| 3/3 [00:00<00:00, 507.40it/s]
+Detected kernel version 3.10.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+Sanity check...
+Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.31334149326805383, 'arc-e_accuracy': 0.6614035087719298}
+Using /data/long_phan/.cache/torch_extensions/py310_cu117 as PyTorch extensions root...
+Detected CUDA files, patching ldflags
+Emitting ninja build file /data/long_phan/.cache/torch_extensions/py310_cu117/fused_adam/build.ninja...
+Building extension module fused_adam...
+Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+ninja: no work to do.
+Loading extension module fused_adam...
+Time to load fused_adam op: 0.1463477611541748 seconds
+  0%|          | 0/70 [00:00<?, ?it/s]  1%|▏         | 1/70 [00:02<02:44,  2.39s/it]  3%|▎         | 2/70 [00:04<02:40,  2.36s/it]  4%|▍         | 3/70 [00:07<02:37,  2.35s/it]  6%|▌         | 4/70 [00:09<02:34,  2.34s/it]  7%|▋         | 5/70 [00:11<02:32,  2.34s/it]  9%|▊         | 6/70 [00:14<02:29,  2.34s/it] 10%|█         | 7/70 [00:16<02:27,  2.34s/it] 11%|█▏        | 8/70 [00:18<02:25,  2.34s/it] 13%|█▎        | 9/70 [00:21<02:23,  2.34s/it] 14%|█▍        | 10/70 [00:23<02:20,  2.34s/it]                                               {'loss': 33.9895, 'learning_rate': 0.0003, 'epoch': 0.02}
+ 14%|█▍        | 10/70 [00:23<02:20,  2.34s/it]Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.3488372093023256, 'arc-e_accuracy': 0.6578947368421053}
+ 16%|█▌        | 11/70 [01:01<12:59, 13.21s/it] 17%|█▋        | 12/70 [01:03<09:34,  9.90s/it] 19%|█▊        | 13/70 [01:05<07:13,  7.61s/it] 20%|██        | 14/70 [01:08<05:37,  6.02s/it] 21%|██▏       | 15/70 [01:10<04:30,  4.92s/it] 23%|██▎       | 16/70 [01:13<03:43,  4.14s/it] 24%|██▍       | 17/70 [01:15<03:10,  3.60s/it] 26%|██▌       | 18/70 [01:17<02:47,  3.22s/it] 27%|██▋       | 19/70 [01:20<02:30,  2.96s/it] 29%|██▊       | 20/70 [01:22<02:18,  2.77s/it]                                               {'loss': 30.578, 'learning_rate': 0.0003, 'epoch': 0.03}
+ 29%|██▊       | 20/70 [01:22<02:18,  2.77s/it]Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.397796817625459, 'arc-e_accuracy': 0.6842105263157895}
+ 30%|███       | 21/70 [02:00<10:50, 13.27s/it] 31%|███▏      | 22/70 [02:02<07:59,  9.99s/it] 33%|███▎      | 23/70 [02:04<06:01,  7.69s/it] 34%|███▍      | 24/70 [02:07<04:39,  6.09s/it] 36%|███▌      | 25/70 [02:09<03:43,  4.96s/it] 37%|███▋      | 26/70 [02:11<03:03,  4.18s/it] 39%|███▊      | 27/70 [02:14<02:35,  3.63s/it] 40%|████      | 28/70 [02:16<02:16,  3.24s/it] 41%|████▏     | 29/70 [02:18<02:01,  2.97s/it] 43%|████▎     | 30/70 [02:21<01:51,  2.79s/it]                                               {'loss': 30.4674, 'learning_rate': 0.0003, 'epoch': 0.05}
+ 43%|████▎     | 30/70 [02:21<01:51,  2.79s/it]Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.40514075887392903, 'arc-e_accuracy': 0.6964912280701754}
+ 44%|████▍     | 31/70 [02:58<08:37, 13.27s/it] 46%|████▌     | 32/70 [03:01<06:19,  9.99s/it] 47%|████▋     | 33/70 [03:03<04:44,  7.70s/it] 49%|████▊     | 34/70 [03:05<03:39,  6.09s/it] 50%|█████     | 35/70 [03:08<02:53,  4.97s/it] 51%|█████▏    | 36/70 [03:10<02:22,  4.18s/it] 53%|█████▎    | 37/70 [03:13<01:59,  3.63s/it] 54%|█████▍    | 38/70 [03:15<01:43,  3.25s/it] 56%|█████▌    | 39/70 [03:17<01:32,  2.98s/it] 57%|█████▋    | 40/70 [03:20<01:23,  2.79s/it]                                               {'loss': 30.4369, 'learning_rate': 0.0003, 'epoch': 0.06}
+ 57%|█████▋    | 40/70 [03:20<01:23,  2.79s/it]Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.40024479804161567, 'arc-e_accuracy': 0.6912280701754386}
+ 59%|█████▊    | 41/70 [03:57<06:25, 13.28s/it] 60%|██████    | 42/70 [04:00<04:39, 10.00s/it] 61%|██████▏   | 43/70 [04:02<03:27,  7.70s/it] 63%|██████▎   | 44/70 [04:04<02:38,  6.09s/it] 64%|██████▍   | 45/70 [04:07<02:04,  4.97s/it] 66%|██████▌   | 46/70 [04:09<01:40,  4.19s/it] 67%|██████▋   | 47/70 [04:11<01:23,  3.63s/it] 69%|██████▊   | 48/70 [04:14<01:11,  3.25s/it] 70%|███████   | 49/70 [04:16<01:02,  2.98s/it] 71%|███████▏  | 50/70 [04:18<00:56,  2.80s/it]                                               {'loss': 30.0365, 'learning_rate': 0.0003, 'epoch': 0.08}
+ 71%|███████▏  | 50/70 [04:18<00:56,  2.80s/it]Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.4149326805385557, 'arc-e_accuracy': 0.6964912280701754}
+ 73%|███████▎  | 51/70 [04:56<04:12, 13.31s/it] 74%|███████▍  | 52/70 [04:59<03:00, 10.03s/it] 76%|███████▌  | 53/70 [05:01<02:11,  7.73s/it] 77%|███████▋  | 54/70 [05:03<01:38,  6.13s/it] 79%|███████▊  | 55/70 [05:06<01:14,  5.00s/it] 80%|████████  | 56/70 [05:08<00:59,  4.23s/it] 81%|████████▏ | 57/70 [05:11<00:47,  3.67s/it] 83%|████████▎ | 58/70 [05:13<00:39,  3.28s/it] 84%|████████▍ | 59/70 [05:15<00:33,  3.01s/it] 86%|████████▌ | 60/70 [05:18<00:28,  2.83s/it]                                               {'loss': 28.5469, 'learning_rate': 0.0003, 'epoch': 0.1}
+ 86%|████████▌ | 60/70 [05:18<00:28,  2.83s/it]Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.4259485924112607, 'arc-e_accuracy': 0.7052631578947368}
+ 87%|████████▋ | 61/70 [05:56<02:00, 13.35s/it] 89%|████████▊ | 62/70 [05:58<01:20, 10.06s/it] 90%|█████████ | 63/70 [06:00<00:54,  7.76s/it] 91%|█████████▏| 64/70 [06:03<00:36,  6.16s/it] 93%|█████████▎| 65/70 [06:05<00:25,  5.05s/it] 94%|█████████▍| 66/70 [06:08<00:16,  4.25s/it] 96%|█████████▌| 67/70 [06:10<00:11,  3.68s/it] 97%|█████████▋| 68/70 [06:12<00:06,  3.29s/it] 99%|█████████▊| 69/70 [06:15<00:03,  3.02s/it]100%|██████████| 70/70 [06:17<00:00,  2.86s/it]                                               {'loss': 26.6345, 'learning_rate': 0.0003, 'epoch': 0.11}
+100%|██████████| 70/70 [06:17<00:00,  2.86s/it]Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.42472460220318237, 'arc-e_accuracy': 0.712280701754386}
+Evaluating tqa accuracy...
+Evaluating arc-e accuracy...
+===Eval results===
+{'tqa_accuracy': 0.42472460220318237, 'arc-e_accuracy': 0.712280701754386}
+                                               {'train_runtime': 448.7165, 'train_samples_per_second': 2.496, 'train_steps_per_second': 0.156, 'train_loss': 30.09851771763393, 'epoch': 0.11}
+100%|██████████| 70/70 [07:28<00:00,  2.86s/it]100%|██████████| 70/70 [07:28<00:00,  6.41s/it]
+[2023-11-08 21:03:52,820] [INFO] [launch.py:347:main] Process 244200 exits successfully.
