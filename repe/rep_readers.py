@@ -5,17 +5,6 @@ import numpy as np
 from itertools import islice
 
 import torch
-# ### Util Functions ###
-def _epoch(layer, hidden_states, mean, direction,component_index, transformed_hidden_states):
-    '''Failed multi-processing attempt'''
-    layer_hidden_states = hidden_states[layer]
-    layer_hidden_states = recenter(layer_hidden_states, mean=mean[layer])
-    # project hidden states onto found concept directions (e.g. onto PCA comp 0) 
-    H_transformed = project_onto_direction(layer_hidden_states, direction[layer][component_index])
-    transformed_hidden_states[layer] = H_transformed.cpu().numpy()
-
-
-
 def project_onto_direction(H, direction):
     """Project matrix H (n, d_1) onto direction vector (d_2,)"""
     # Calculate the magnitude of the direction vector
@@ -32,14 +21,11 @@ def project_onto_direction(H, direction):
     return projection
 
 def recenter(x, mean=None):
-    # print(mean, type(mean))
     x = torch.Tensor(x).cuda()
     if mean is None:
-        # mean = x.mean(axis=0, keepdims=True)
         mean = torch.mean(x,axis=0,keepdims=True).cuda()
     else:
         mean = torch.Tensor(mean).cuda()
-    # print(type(x), type(mean))
     return x - mean
 
 class RepReader(ABC):
@@ -128,7 +114,6 @@ class RepReader(ABC):
 
         assert component_index < self.n_components
         import time
-        t1 = time.time()
         transformed_hidden_states = {}
         for layer in hidden_layers:
             layer_hidden_states = hidden_states[layer]
@@ -138,10 +123,7 @@ class RepReader(ABC):
 
             # project hidden states onto found concept directions (e.g. onto PCA comp 0) 
             H_transformed = project_onto_direction(layer_hidden_states, self.directions[layer][component_index])
-            transformed_hidden_states[layer] = H_transformed.cpu().numpy()
-
-        t2 = time.time()
-        
+            transformed_hidden_states[layer] = H_transformed.cpu().numpy()       
         return transformed_hidden_states
     
 
@@ -163,12 +145,10 @@ class PCARepReader(RepReader):
 
         for layer in hidden_layers:
             H_train = hidden_states[layer]
-            # print(H_train,type(H_train))
             H_train_mean = H_train.mean(axis=0, keepdims=True)
             self.H_train_means[layer] = H_train_mean
             H_train = recenter(H_train, mean=H_train_mean).cpu()
             H_train = np.vstack(H_train)
-            # print(H_train, type(H_train))
             pca_model = PCA(n_components=self.n_components, whiten=False).fit(H_train)
 
             directions[layer] = pca_model.components_ # shape (n_components, n_features)
