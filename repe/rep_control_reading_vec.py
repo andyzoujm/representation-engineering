@@ -52,20 +52,20 @@ class WrappedBlock(torch.nn.Module):
             if type(mask) == torch.Tensor:
                 mask = mask.to(modified.device)
             if isinstance(self.token_pos, int):
-                modified[:, self.token_pos] = modified[:, self.token_pos] + self.controller * mask
+                modified[:, self.token_pos] = self.operator(modified[:, self.token_pos], self.controller * mask)
             elif isinstance(self.token_pos, list) or isinstance(self.token_pos, tuple) or isinstance(self.token_pos, np.ndarray):
-                modified[:, self.token_pos] = modified[:, self.token_pos] + self.controller * mask
+                modified[:, self.token_pos] = self.operator(modified[:, self.token_pos], self.controller * mask)
             elif isinstance(self.token_pos, str):
                 if self.token_pos == "end":
                     len_token = self.controller.shape[1]
-                    modified[:, -len_token:] = modified[:, -len_token:] + self.controller * mask
+                    modified[:, -len_token:] = self.operator(modified[:, -len_token:], self.controller * mask)
                 elif self.token_pos == "start":
                     len_token = self.controller.shape[1]
-                    modified[:, :len_token] = modified[:, :len_token] + self.controller * mask
+                    modified[:, :len_token] = self.operator(modified[:, :len_token], self.controller * mask)
                 else:
                     assert False, f"Unknown token position {self.token_pos}."
             else:
-                modified = modified + self.controller * mask
+                modified = self.operator(modified, self.controller * mask)
 
             if self.normalize:
                 norm_post = torch.norm(modified, dim=-1, keepdim=True)
@@ -78,16 +78,31 @@ class WrappedBlock(torch.nn.Module):
         
         return output
 
-    def set_controller(self, activations, token_pos=None, masks=None, normalize=False):
+    def set_controller(self, activations, token_pos=None, masks=None, normalize=False, operator='linear_comb'):
         self.normalize = normalize
         self.controller = activations.squeeze()
         self.mask = masks
         self.token_pos = token_pos
+        if operator == 'linear_comb':
+            def op(current, controller):
+                return current + controller
+        elif operator == 'piecewise_linear':
+            def op(current, controller):
+                sign = torch.sign((current * controller).sum(-1, keepdim=True))
+                return current + controller * sign
+        elif operator == 'projection':
+            def op(current, controller):
+                raise NotImplementedError
+        else:
+            raise NotImplementedError(f"Operator {operator} not implemented.")
+        self.operator = op
         
     def reset(self):
         self.output = None
         self.controller = None
         self.mask = None
+        self.token_pos = None
+        self.operator = None
 
     def set_masks(self, masks):
         self.mask = masks
@@ -240,44 +255,44 @@ class WrappedReadingVecModel(torch.nn.Module):
             return _get_activations(layer_ids, block_name)
 
 
-    def set_controller(self, layer_ids, activations, block_name='decoder_block', token_pos=None, masks=None, normalize=False):
+    def set_controller(self, layer_ids, activations, block_name='decoder_block', token_pos=None, masks=None, normalize=False, operator='linear_comb'):
 
-        def _set_controller(layer_id, activations, block_name, masks, normalize):
+        def _set_controller(layer_id, activations, block_name, masks, normalize, operator):
             current_layer = self.model.model.layers[layer_id]
 
             if block_name == 'decoder_block':
-                current_layer.set_controller(activations, token_pos, masks, normalize)
+                current_layer.set_controller(activations, token_pos, masks, normalize, operator)
             elif self.is_wrapped(current_layer):
                 current_block = current_layer.block  
                 if block_name == 'self_attn' and self.is_wrapped(current_block.self_attn):
-                    current_block.self_attn.set_controller(activations, token_pos, masks, normalize)
+                    current_block.self_attn.set_controller(activations, token_pos, masks, normalize, operator)
                 elif block_name == 'mlp' and self.is_wrapped(current_block.mlp):
-                    current_block.mlp.set_controller(activations, token_pos, masks, normalize)
+                    current_block.mlp.set_controller(activations, token_pos, masks, normalize, operator)
                 elif block_name == 'input_layernorm' and self.is_wrapped(current_block.input_layernorm):
-                    current_block.input_layernorm.set_controller(activations, token_pos, masks, normalize)
+                    current_block.input_layernorm.set_controller(activations, token_pos, masks, normalize, operator)
                 elif block_name == 'post_attention_layernorm' and self.is_wrapped(current_block.post_attention_layernorm):
-                    current_block.post_attention_layernorm.set_controller(activations, token_pos, masks, normalize)
+                    current_block.post_attention_layernorm.set_controller(activations, token_pos, masks, normalize, operator)
                 else:
                     return f"No wrapped block named {block_name}."
 
             else:
                 if block_name == 'self_attn' and self.is_wrapped(current_layer.self_attn):
-                    current_layer.self_attn.set_controller(activations, token_pos, masks, normalize)
+                    current_layer.self_attn.set_controller(activations, token_pos, masks, normalize, operator)
                 elif block_name == 'mlp' and self.is_wrapped(current_layer.mlp):
-                    current_layer.mlp.set_controller(activations, token_pos, masks, normalize)
+                    current_layer.mlp.set_controller(activations, token_pos, masks, normalize, operator)
                 elif block_name == 'input_layernorm' and self.is_wrapped(current_layer.input_layernorm):
-                    current_layer.input_layernorm.set_controller(activations, token_pos, masks, normalize)
+                    current_layer.input_layernorm.set_controller(activations, token_pos, masks, normalize, operator)
                 elif block_name == 'post_attention_layernorm' and self.is_wrapped(current_layer.post_attention_layernorm):
-                    current_layer.post_attention_layernorm.set_controller(activations, token_pos, masks, normalize)
+                    current_layer.post_attention_layernorm.set_controller(activations, token_pos, masks, normalize, operator)
                 else:
                     return f"No wrapped block named {block_name}."
                 
         if isinstance(layer_ids, list) or isinstance(layer_ids, tuple) or isinstance(layer_ids, np.ndarray):
             assert isinstance(activations, dict), "activations should be a dictionary"
             for layer_id in layer_ids:
-                _set_controller(layer_id, activations[layer_id], block_name, masks, normalize)
+                _set_controller(layer_id, activations[layer_id], block_name, masks, normalize, operator)
         else:
-            _set_controller(layer_ids, activations, block_name, masks, normalize)
+            _set_controller(layer_ids, activations, block_name, masks, normalize, operator)
       
         
     def reset(self):
