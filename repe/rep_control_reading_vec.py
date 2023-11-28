@@ -117,14 +117,9 @@ class WrappedReadingVecModel(torch.nn.Module):
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
         
-    def generate(self, prompt, max_new_tokens=100, random_seed=0, use_cache=True):
-        with torch.no_grad():
-            torch.random.manual_seed(random_seed)
-            inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, max_length=512, truncation=True)
-            attention_mask = inputs.attention_mask.to(self.model.device)
-            generate_ids = self.model.generate(inputs.input_ids.to(self.model.device), attention_mask=attention_mask, max_new_tokens=max_new_tokens, use_cache=use_cache)
-            return self.tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-    
+    def generate(self, **kwargs):
+        return self.model.generate(**kwargs)
+        
     def get_logits(self, tokens):
         with torch.no_grad():
             logits = self.model(tokens.to(self.model.device)).logits

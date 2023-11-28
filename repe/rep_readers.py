@@ -3,8 +3,8 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import numpy as np
 from itertools import islice
-
 import torch
+
 def project_onto_direction(H, direction):
     """Project matrix H (n, d_1) onto direction vector (d_2,)"""
     # Calculate the magnitude of the direction vector
@@ -113,7 +113,6 @@ class RepReader(ABC):
         """
 
         assert component_index < self.n_components
-        import time
         transformed_hidden_states = {}
         for layer in hidden_layers:
             layer_hidden_states = hidden_states[layer]
@@ -125,10 +124,6 @@ class RepReader(ABC):
             H_transformed = project_onto_direction(layer_hidden_states, self.directions[layer][component_index])
             transformed_hidden_states[layer] = H_transformed.cpu().numpy()       
         return transformed_hidden_states
-    
-
-    def load(self, d, s):
-        self.directions, self.direction_signs = d, s
 
 class PCARepReader(RepReader):
     """Extract directions via PCA"""
