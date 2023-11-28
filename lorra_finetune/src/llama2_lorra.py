@@ -260,6 +260,7 @@ def train():
         model.save_pretrained(training_args.output_dir) # saving adapter
         merged_model = model.merge_and_unload() # saving full model
         merged_model.save_pretrained(training_args.output_dir)
+        tokenizer.save_pretrained(training_args.output_dir)
 
 if __name__ == "__main__":
     train()
