@@ -107,6 +107,13 @@ class WrappedBlock(torch.nn.Module):
     def set_masks(self, masks):
         self.mask = masks
 
+
+BLOCK_NAMES = [
+    "self_attn",
+    "mlp",
+    "input_layernorm",
+    "post_attention_layernorm"
+    ]
     
 class WrappedReadingVecModel(torch.nn.Module):
     def __init__(self, model, tokenizer):
@@ -132,71 +139,33 @@ class WrappedReadingVecModel(torch.nn.Module):
             attention_mask = inputs.attention_mask.to(self.model.device)
             output = self.model(input_ids, attention_mask=attention_mask)
             return output
-        
-    def wrap_self_attn(self, layer_id):
+
+    def wrap(self, layer_id, block_name):
+        assert block_name in BLOCK_NAMES
         if self.is_wrapped(self.model.model.layers[layer_id]):
-            block = self.model.model.layers[layer_id].block.self_attn
+            block = getattr(self.model.model.layers[layer_id].block, block_name)
             if not self.is_wrapped(block):
-                self.model.model.layers[layer_id].block.self_attn = WrappedBlock(block)
+                setattr(self.model.model.layers[layer_id].block, block_name, WrappedBlock(block))
         else:
-            block = self.model.model.layers[layer_id].self_attn
+            block = getattr(self.model.model.layers[layer_id], block_name)
             if not self.is_wrapped(block):
-                self.model.model.layers[layer_id].self_attn = WrappedBlock(block)
-    
-    def wrap_mlp(self, layer_id):
-        if self.is_wrapped(self.model.model.layers[layer_id]):
-            block = self.model.model.layers[layer_id].block.mlp
-            if not self.is_wrapped(block):
-                self.model.model.layers[layer_id].block.mlp = WrappedBlock(block)
-        else:
-            block = self.model.model.layers[layer_id].mlp
-            if not self.is_wrapped(block):
-                self.model.model.layers[layer_id].mlp = WrappedBlock(block)
-        
-    def wrap_input_layernorm(self, layer_id):
-        if self.is_wrapped(self.model.model.layers[layer_id]):
-            block = self.model.model.layers[layer_id].block.input_layernorm
-            if not self.is_wrapped(block):
-                self.model.model.layers[layer_id].block.input_layernorm = WrappedBlock(block)
-        else:
-            block = self.model.model.layers[layer_id].input_layernorm
-            if not self.is_wrapped(block):
-                self.model.model.layers[layer_id].input_layernorm = WrappedBlock(block)
-        
-    def wrap_post_attention_layernorm(self, layer_id):
-        if self.is_wrapped(self.model.model.layers[layer_id]):
-            block = self.model.model.layers[layer_id].block.post_attention_layernorm
-            if not self.is_wrapped(block):
-                self.model.model.layers[layer_id].block.post_attention_layernorm = WrappedBlock(block)
-        else:
-            block = self.model.model.layers[layer_id].post_attention_layernorm
-            if not self.is_wrapped(block):
-                self.model.model.layers[layer_id].post_attention_layernorm = WrappedBlock(block)
-        
+                setattr(self.model.model.layers[layer_id], block_name, WrappedBlock(block))
+
     def wrap_decoder_block(self, layer_id):
         block = self.model.model.layers[layer_id]
         if not self.is_wrapped(block):
             self.model.model.layers[layer_id] = WrappedBlock(block)
-        
-    
+
     def wrap_all(self):
         for layer_id, layer in enumerate(self.model.model.layers):
-            self.wrap_self_attn(layer_id)
-            self.wrap_mlp(layer_id)
-            self.wrap_input_layernorm(layer_id)
-            self.wrap_post_attention_layernorm(layer_id)
+            for block_name in BLOCK_NAMES:
+                self.wrap(layer_id, block_name)
             self.wrap_decoder_block(layer_id)
             
     def wrap_block(self, layer_ids, block_name):
         def _wrap_block(layer_id, block_name):
-            if block_name == 'self_attn':
-                self.wrap_self_attn(layer_id)
-            elif block_name == 'mlp':
-                self.wrap_mlp(layer_id)
-            elif block_name == 'input_layernorm':
-                self.wrap_input_layernorm(layer_id)
-            elif block_name == 'post_attention_layernorm':
-                self.wrap_post_attention_layernorm(layer_id)
+            if block_name in BLOCK_NAMES:
+                self.wrap(layer_id, block_name)
             elif block_name == 'decoder_block':
                 self.wrap_decoder_block(layer_id)
             else:
@@ -208,7 +177,6 @@ class WrappedReadingVecModel(torch.nn.Module):
         else:
             _wrap_block(layer_ids, block_name)
 
-            
     def get_activations(self, layer_ids, block_name='decoder_block'):
 
         def _get_activations(layer_id, block_name):
@@ -218,26 +186,14 @@ class WrappedReadingVecModel(torch.nn.Module):
                 current_block = current_layer.block
                 if block_name == 'decoder_block':
                     return current_layer.output
-                elif block_name == 'self_attn' and self.is_wrapped(current_block.self_attn):
-                    return current_block.self_attn.output
-                elif block_name == 'mlp' and self.is_wrapped(current_block.mlp):
-                    return current_block.mlp.output
-                elif block_name == 'input_layernorm' and self.is_wrapped(current_block.input_layernorm):
-                    return current_block.input_layernorm.output
-                elif block_name == 'post_attention_layernorm' and self.is_wrapped(current_block.post_attention_layernorm):
-                    return current_block.post_attention_layernorm.output
+                elif block_name in BLOCK_NAMES and self.is_wrapped(getattr(current_block, block_name)):
+                    return getattr(current_block, block_name).output
                 else:
                     assert False, f"No wrapped block named {block_name}."
 
             else:
-                if block_name == 'self_attn' and self.is_wrapped(current_layer.self_attn):
-                    return current_layer.self_attn.output
-                elif block_name == 'mlp' and self.is_wrapped(current_layer.mlp):
-                    return current_layer.mlp.output
-                elif block_name == 'input_layernorm' and self.is_wrapped(current_layer.input_layernorm):
-                    return current_layer.input_layernorm.output
-                elif block_name == 'post_attention_layernorm' and self.is_wrapped(current_layer.post_attention_layernorm):
-                    return current_layer.post_attention_layernorm.output
+                if block_name in BLOCK_NAMES and self.is_wrapped(getattr(current_layer, block_name)):
+                    return getattr(current_layer, block_name).output
                 else:
                     assert False, f"No wrapped block named {block_name}."
                 
@@ -258,27 +214,15 @@ class WrappedReadingVecModel(torch.nn.Module):
             if block_name == 'decoder_block':
                 current_layer.set_controller(activations, token_pos, masks, normalize, operator)
             elif self.is_wrapped(current_layer):
-                current_block = current_layer.block  
-                if block_name == 'self_attn' and self.is_wrapped(current_block.self_attn):
-                    current_block.self_attn.set_controller(activations, token_pos, masks, normalize, operator)
-                elif block_name == 'mlp' and self.is_wrapped(current_block.mlp):
-                    current_block.mlp.set_controller(activations, token_pos, masks, normalize, operator)
-                elif block_name == 'input_layernorm' and self.is_wrapped(current_block.input_layernorm):
-                    current_block.input_layernorm.set_controller(activations, token_pos, masks, normalize, operator)
-                elif block_name == 'post_attention_layernorm' and self.is_wrapped(current_block.post_attention_layernorm):
-                    current_block.post_attention_layernorm.set_controller(activations, token_pos, masks, normalize, operator)
+                current_block = current_layer.block
+                if block_name in BLOCK_NAMES and self.is_wrapped(getattr(current_block, block_name)):
+                    getattr(current_block, block_name).set_controller(activations, token_pos, masks, normalize, operator)
                 else:
                     return f"No wrapped block named {block_name}."
 
             else:
-                if block_name == 'self_attn' and self.is_wrapped(current_layer.self_attn):
-                    current_layer.self_attn.set_controller(activations, token_pos, masks, normalize, operator)
-                elif block_name == 'mlp' and self.is_wrapped(current_layer.mlp):
-                    current_layer.mlp.set_controller(activations, token_pos, masks, normalize, operator)
-                elif block_name == 'input_layernorm' and self.is_wrapped(current_layer.input_layernorm):
-                    current_layer.input_layernorm.set_controller(activations, token_pos, masks, normalize, operator)
-                elif block_name == 'post_attention_layernorm' and self.is_wrapped(current_layer.post_attention_layernorm):
-                    current_layer.post_attention_layernorm.set_controller(activations, token_pos, masks, normalize, operator)
+                if block_name in BLOCK_NAMES and self.is_wrapped(getattr(current_layer, block_name)):
+                    getattr(current_layer, block_name).set_controller(activations, token_pos, masks, normalize, operator)
                 else:
                     return f"No wrapped block named {block_name}."
                 
@@ -294,46 +238,25 @@ class WrappedReadingVecModel(torch.nn.Module):
         for layer in self.model.model.layers:
             if self.is_wrapped(layer):
                 layer.reset()
-                if self.is_wrapped(layer.block.self_attn):
-                    layer.block.self_attn.reset()
-                if self.is_wrapped(layer.block.mlp):
-                    layer.block.mlp.reset()
-                if self.is_wrapped(layer.block.input_layernorm):
-                    layer.block.input_layernorm.reset()
-                if self.is_wrapped(layer.block.post_attention_layernorm):
-                    layer.block.post_attention_layernorm.reset()
-            else:   
-                if self.is_wrapped(layer.self_attn):
-                    layer.self_attn.reset()
-                if self.is_wrapped(layer.mlp):
-                    layer.mlp.reset()
-                if self.is_wrapped(layer.input_layernorm):
-                    layer.input_layernorm.reset()
-                if self.is_wrapped(layer.post_attention_layernorm):
-                    layer.post_attention_layernorm.reset()
+                for block_name in BLOCK_NAMES:
+                    if self.is_wrapped(getattr(layer.block, block_name)):
+                        getattr(layer.block, block_name).reset()
+            else:
+                for block_name in BLOCK_NAMES:
+                    if self.is_wrapped(getattr(layer, block_name)):
+                        getattr(layer, block_name).reset()
 
     def set_masks(self, masks):
         for layer in self.model.model.layers:
             if self.is_wrapped(layer):
                 layer.set_masks(masks)
-                if self.is_wrapped(layer.block.self_attn):
-                    layer.block.self_attn.set_masks(masks)
-                if self.is_wrapped(layer.block.mlp):
-                    layer.block.mlp.set_masks(masks)
-                if self.is_wrapped(layer.block.input_layernorm):
-                    layer.block.input_layernorm.set_masks(masks)
-                if self.is_wrapped(layer.block.post_attention_layernorm):
-                    layer.block.post_attention_layernorm.set_masks(masks)
-            else:   
-                if self.is_wrapped(layer.self_attn):
-                    layer.self_attn.set_masks(masks)
-                if self.is_wrapped(layer.mlp):
-                    layer.mlp.set_masks(masks)
-                if self.is_wrapped(layer.input_layernorm):
-                    layer.input_layernorm.set_masks(masks)
-                if self.is_wrapped(layer.post_attention_layernorm):
-                    layer.post_attention_layernorm.set_masks(masks)
-
+                for block_name in BLOCK_NAMES:
+                    if self.is_wrapped(getattr(layer.block, block_name)):
+                        getattr(layer.block, block_name).set_masks(masks)
+            else:
+                for block_name in BLOCK_NAMES:
+                    if self.is_wrapped(getattr(layer, block_name)):
+                        getattr(layer, block_name).set_masks(masks)
 
     def is_wrapped(self, block):
         if hasattr(block, 'block'):
@@ -344,11 +267,8 @@ class WrappedReadingVecModel(torch.nn.Module):
         for l, layer in enumerate(self.model.model.layers):
             if self.is_wrapped(layer):
                 self.model.model.layers[l] = layer.block
-            if self.is_wrapped(self.model.model.layers[l].self_attn):
-                self.model.model.layers[l].self_attn = self.model.model.layers[l].self_attn.block
-            if self.is_wrapped(self.model.model.layers[l].mlp):
-                self.model.model.layers[l].mlp = self.model.model.layers[l].mlp.block
-            if self.is_wrapped(self.model.model.layers[l].input_layernorm):
-                self.model.model.layers[l].input_layernorm = self.model.model.layers[l].input_layernorm.block
-            if self.is_wrapped(self.model.model.layers[l].post_attention_layernorm):
-                self.model.model.layers[l].post_attention_layernorm = self.model.model.layers[l].post_attention_layernorm.block
+            for block_name in BLOCK_NAMES:
+                if self.is_wrapped(getattr(self.model.model.layers[l], block_name)):
+                    setattr(self.model.model.layers[l],
+                            block_name,
+                            getattr(self.model.model.layers[l], block_name).block)
