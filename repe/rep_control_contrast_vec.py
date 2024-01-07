@@ -2,7 +2,9 @@ from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutpu
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.models.llama.modeling_llama import LlamaModel, LlamaForCausalLM
 from transformers.models.mistral.modeling_mistral import MistralModel, MistralForCausalLM
-
+from transformers.generation.stopping_criteria import StoppingCriteria, StoppingCriteriaList, validate_stopping_criteria
+from transformers.generation.logits_process import LogitsProcessorList
+from transformers.generation import GreedySearchDecoderOnlyOutput
 from repe.rep_control_reading_vec import WrappedBlock
 import torch
 from torch import nn
@@ -16,6 +18,174 @@ from transformers.modeling_attn_mask_utils import (
 from functools import partial
 
 # === should work for Llama and Mistral ===
+def contrast_greedy_search(
+    self,
+    input_ids: torch.LongTensor,
+    logits_processor: Optional[LogitsProcessorList] = None,
+    stopping_criteria: Optional[StoppingCriteriaList] = None,
+    max_length: Optional[int] = None,
+    pad_token_id: Optional[int] = None,
+    eos_token_id: Optional[Union[int, List[int]]] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    output_scores: Optional[bool] = None,
+    return_dict_in_generate: Optional[bool] = None,
+    synced_gpus: bool = False,
+    streamer: Optional["BaseStreamer"] = None,
+    **model_kwargs,
+) -> Union[GreedySearchDecoderOnlyOutput, torch.LongTensor]:
+
+    # ===== pop repe/contrast control args ====
+    alpha = model_kwargs.pop('alpha', None)
+    contrast_tokens = model_kwargs.pop('contrast_tokens', None)
+    compute_contrast = model_kwargs.pop('compute_contrast', None)
+    pos_input_ids = model_kwargs.pop('pos_input_ids', None)
+    pos_attention_mask = model_kwargs.pop('pos_attention_mask', None)
+    neg_input_ids = model_kwargs.pop('neg_input_ids', None)
+    neg_attention_mask = model_kwargs.pop('neg_attention_mask', None)
+    control_layer_ids = model_kwargs.pop('control_layer_ids', None)
+
+    assert not compute_contrast or not model_kwargs.get('use_cache', False), "Contrast Greedy Search not yet support generate with use_cache, please set model.generate(**kwargs, use_cache=False)"
+
+    # init values
+    logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
+    stopping_criteria = stopping_criteria if stopping_criteria is not None else StoppingCriteriaList()
+    if max_length is not None:
+        warnings.warn(
+            "`max_length` is deprecated in this function, use"
+            " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
+            UserWarning,
+        )
+        stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
+    pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
+    eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
+    if isinstance(eos_token_id, int):
+        eos_token_id = [eos_token_id]
+    eos_token_id_tensor = torch.tensor(eos_token_id).to(input_ids.device) if eos_token_id is not None else None
+    output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
+    output_attentions = (
+        output_attentions if output_attentions is not None else self.generation_config.output_attentions
+    )
+    output_hidden_states = (
+        output_hidden_states if output_hidden_states is not None else self.generation_config.output_hidden_states
+    )
+    return_dict_in_generate = (
+        return_dict_in_generate
+        if return_dict_in_generate is not None
+        else self.generation_config.return_dict_in_generate
+    )
+
+    # init attention / hidden states / scores tuples
+    scores = () if (return_dict_in_generate and output_scores) else None
+    decoder_attentions = () if (return_dict_in_generate and output_attentions) else None
+    cross_attentions = () if (return_dict_in_generate and output_attentions) else None
+    decoder_hidden_states = () if (return_dict_in_generate and output_hidden_states) else None
+
+    # keep track of which sequences are already finished
+    unfinished_sequences = torch.ones(input_ids.shape[0], dtype=torch.long, device=input_ids.device)
+
+    this_peer_finished = False  # used by synced_gpus only
+    while True:
+        if synced_gpus:
+            # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
+            # The following logic allows an early break if all peers finished generating their sequence
+            this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0).to(input_ids.device)
+            # send 0.0 if we finished, 1.0 otherwise
+            dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
+            # did all peers finish? the reduced sum will be 0.0 then
+            if this_peer_finished_flag.item() == 0.0:
+                break
+
+        # prepare model inputs
+        model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+
+        # forward pass to get next token
+        outputs = self(
+            **model_inputs,
+            return_dict=True,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            pos_input_ids=pos_input_ids,
+            pos_attention_mask=pos_attention_mask,
+            neg_input_ids=neg_input_ids,
+            neg_attention_mask=neg_attention_mask,
+            contrast_tokens=contrast_tokens,
+            compute_contrast=compute_contrast,
+            alpha=alpha,
+            control_layer_ids=control_layer_ids,
+        )
+
+        if synced_gpus and this_peer_finished:
+            continue  # don't waste resources running the code we don't need
+
+        next_token_logits = outputs.logits[:, -1, :]
+
+        # pre-process distribution
+        next_tokens_scores = logits_processor(input_ids, next_token_logits)
+
+        # Store scores, attentions and hidden_states when required
+        if return_dict_in_generate:
+            if output_scores:
+                scores += (next_tokens_scores,)
+            if output_attentions:
+                decoder_attentions += (
+                    (outputs.attentions,)
+                )
+
+            if output_hidden_states:
+                decoder_hidden_states += (
+                    (outputs.hidden_states,)
+                )
+
+        # argmax
+        next_tokens = torch.argmax(next_tokens_scores, dim=-1)
+
+        # finished sentences should have their next token be a padding token
+        if eos_token_id is not None:
+            if pad_token_id is None:
+                raise ValueError("If `eos_token_id` is defined, make sure that `pad_token_id` is defined.")
+            next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
+
+        # update generated ids, model inputs, and length for next step
+        input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-1)
+        if streamer is not None:
+            streamer.put(next_tokens.cpu())
+        model_kwargs = self._update_model_kwargs_for_generation(
+            outputs, model_kwargs
+        )
+
+        # if eos_token was found in one sentence, set sentence to finished
+        if eos_token_id_tensor is not None:
+            unfinished_sequences = unfinished_sequences.mul(
+                next_tokens.tile(eos_token_id_tensor.shape[0], 1).ne(eos_token_id_tensor.unsqueeze(1)).prod(dim=0)
+            )
+
+            # stop when each sentence is finished
+            if unfinished_sequences.max() == 0:
+                this_peer_finished = True
+
+        # stop if we exceed the maximum length
+        if stopping_criteria(input_ids, scores):
+            this_peer_finished = True
+
+        if this_peer_finished and not synced_gpus:
+            break
+
+    if streamer is not None:
+        streamer.end()
+
+    if return_dict_in_generate:
+        return GreedySearchDecoderOnlyOutput(
+            sequences=input_ids,
+            scores=scores,
+            attentions=decoder_attentions,
+            hidden_states=decoder_hidden_states,
+            past_key_values=model_kwargs.get("past_key_values"),
+        )
+    else:
+        return input_ids
+
+
 def forward_contrast_vector(
         self,
         input_ids: torch.LongTensor = None,
@@ -29,9 +199,9 @@ def forward_contrast_vector(
         return_dict: Optional[bool] = None,
 
         # ==== repe coeff ====
-        alpha: int = 0.25,
-        split: int = 8,
-        compute_casading: bool = False,
+        alpha: int = None,
+        contrast_tokens: int = None,
+        compute_contrast: bool = False,
         pos_input_ids: torch.LongTensor = None,
         pos_attention_mask: torch.LongTensor = None,
         neg_input_ids: torch.LongTensor = None,
@@ -102,7 +272,7 @@ def forward_contrast_vector(
         next_decoder_cache = None
 
         activations = None
-        if compute_casading:
+        if compute_contrast:
             # ======== Compute repe =========    
             embeds_p = self.embed_tokens(pos_input_ids)
             embeds_n = self.embed_tokens(neg_input_ids)
@@ -144,7 +314,7 @@ def forward_contrast_vector(
             
             # 1. if layer in target layer, we recompute activations and add
             # 2. else will add previous computed activations
-            if compute_casading:
+            if compute_contrast:
                 # ======== Compute activations for target layers =========    
                 with torch.no_grad():
                     hidden_states_p = forward_function(
@@ -159,7 +329,7 @@ def forward_contrast_vector(
                         use_cache=use_cache
                     )[0].detach()
                 if layer_id in control_layer_ids:
-                    activations = alpha * (hidden_states_p[:, -split:] - hidden_states_n[:, -split:])
+                    activations = alpha * (hidden_states_p[:, contrast_tokens:] - hidden_states_n[:, contrast_tokens:])
                     c_length = activations.shape[1]
 
                     hidden_states[:, -c_length:, :] += activations
@@ -191,7 +361,10 @@ def forward_contrast_vector(
             attentions=all_self_attns,
         )
 
-class CasadingMistralForCausalLM(MistralForCausalLM):
+def _always_true(self, *args, **kwargs):
+    return True
+    
+class ContrastVecMistralForCausalLM(MistralForCausalLM):
     def __init__(self, config):
         nn.Module.__init__(self)
         self.config = config
@@ -201,7 +374,13 @@ class CasadingMistralForCausalLM(MistralForCausalLM):
 
         # Initialize weights and apply final processing
         self.post_init()
+        
+
+        # override current forward and generation functions
         self.model.forward = partial(forward_contrast_vector, self.model)
+        self.greedy_search = partial(contrast_greedy_search, self)
+        # turn off _validate_model_kwargs, TODO: implement _validate_model_kwargs
+        self._validate_model_kwargs = partial(_always_true, self)
 
     def forward(
         self,
@@ -268,7 +447,7 @@ class CasadingMistralForCausalLM(MistralForCausalLM):
             attentions=outputs.attentions,
         )
 
-class CasadingLlamaForCausalLM(LlamaForCausalLM):
+class ContrastVecLlamaForCausalLM(LlamaForCausalLM):
     def __init__(self, config):
         nn.Module.__init__(self)
         self.config = config
@@ -278,7 +457,12 @@ class CasadingLlamaForCausalLM(LlamaForCausalLM):
 
         # Initialize weights and apply final processing
         self.post_init()
+
+        # override current forward and generation functions
         self.model.forward = partial(forward_contrast_vector, self.model)
+        self.greedy_search = partial(contrast_greedy_search, self)
+        # turn off _validate_model_kwargs, TODO: implement _validate_model_kwargs
+        self._validate_model_kwargs = partial(_always_true, self)
 
     def forward(
         self,
@@ -319,7 +503,7 @@ class CasadingLlamaForCausalLM(LlamaForCausalLM):
 
         hidden_states = outputs[0]
         if self.config.pretraining_tp > 1:
-            lm_head_slices = self.lm_head.weight.split(self.vocab_size // self.config.pretraining_tp, dim=0)
+            lm_head_slices = self.lm_head.weight.contrast_tokens(self.vocab_size // self.config.pretraining_tp, dim=0)
             logits = [F.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)]
             logits = torch.cat(logits, dim=-1)
         else:
