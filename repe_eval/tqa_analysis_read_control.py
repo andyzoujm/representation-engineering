@@ -22,7 +22,9 @@ import pdb
 from repe import repe_pipeline_registry
 from repe.rep_control_contrast_vec import ContrastVecLlamaForCausalLM, ContrastVecMistralForCausalLM
 import random
+from transformers import set_seed
 
+set_seed(42)
 torch.manual_seed(42)
 np.random.seed(42)
 random.seed(42)
@@ -35,7 +37,6 @@ from tasks import task_dataset
 
 import fire
 
-# %%
 def batchify(lst, batch_size):
     """Yield successive batch_size chunks from lst."""
     for i in range(0, len(lst), batch_size):
@@ -68,7 +69,7 @@ def prepare_decoder_only_inputs(prompts, targets, tokenizer, device):
     prompt_inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=False)
     tokenizer.padding_side = "right"
     target_inputs = tokenizer(targets, return_tensors="pt", padding=True, truncation=False, add_special_tokens=False)
-    
+
     # concatenate prompt and target tokens and send to device
     inputs = {k: torch.cat([prompt_inputs[k], target_inputs[k]], dim=1).to(device) for k in prompt_inputs}
 
@@ -95,13 +96,14 @@ def calc_acc(labels, output_logprobs):
         correct[i] = np.argmax(log_probs) == label.index(1)
     return correct.mean()
 
-def get_tqa_outputs(model, questions, answers, labels, tokenizer, batch_size=128):
+def get_tqa_accuracy(model, questions, answers, labels, tokenizer, batch_size=128):
     gc.collect()
     # get the log probabilities of each question answer pair
     output_logprobs = []
     for q_batch, a_batch in tqdm(zip(batchify(questions, batch_size), batchify(answers, batch_size)), total=len(questions)//batch_size):
         # print(q_batch[0] + a_batch[0])
         inputs, masks, _ = prepare_decoder_only_inputs(q_batch, a_batch, tokenizer, model.model.device)
+
         with torch.no_grad():
             try:
                 # set the masks so that we do not add to tokens of input sentences and padding tokens
@@ -115,16 +117,11 @@ def get_tqa_outputs(model, questions, answers, labels, tokenizer, batch_size=128
             # mask is zero for question and padding tokens
             logprobs = get_logprobs(logits, inputs['input_ids'], masks).sum(-1).detach().cpu().numpy()
         output_logprobs.extend(logprobs)
-    
-    # clear the masks
-    try:
-        model.set_masks(None)
-    except:
-        pass
-    gc.collect()
-    return output_logprobs
 
+    return output_logprobs
+        
 def get_baselines_for_model(
+        model_name,
         model,
         tokenizer
 ):
@@ -169,6 +166,12 @@ def get_baselines_for_model(
         indices = [i for i, x in enumerate(questions_experimental_stripped) if x == q]
         output_logprobs_truthful_merged[q] = np.array(output_logprobs_truthful)[indices]
 
+    # dump to pickle
+    with open(f"outputs_cache_{model_name}_baseline.pkl", "wb") as f:
+        pickle.dump(output_logprobs_baseline_merged, f)
+    with open(f"outputs_cache_{model_name}_truthful.pkl", "wb") as f:
+        pickle.dump(output_logprobs_truthful_merged, f)
+
     return output_logprobs_baseline_merged, output_logprobs_truthful_merged
 
 def run_rep_control_for_model(
@@ -177,9 +180,8 @@ def run_rep_control_for_model(
         model,
         layer_ids,
         user_tag="[INST] ",
-        assistant_tag="[INST] ",
+        assistant_tag="[/INST] ",
 ):
-    
     batch_size = 128
 
     pos_type = 'Give a truthful answer. '
@@ -217,22 +219,17 @@ def run_rep_control_for_model(
             logprobs = get_logprobs(logits, inputs['input_ids'], masks).sum(-1).detach().cpu().numpy()
         output_logprobs.extend(logprobs)
 
-    # cache logprobs for every q,a pair
-    outputs_cache = {}
-    for i, (q, a) in enumerate(zip(q_batch, a_batch)):
-        # directions_cache = {
-        #     layer_id: directions[layer_id].detach().cpu().numpy()[i]
-        #     for layer_id in layer_ids
-        # }
-        outputs_cache[(q, a)] = {
-            # "directions": directions_cache.copy(),
-            "logprobs": logprobs[i],
+    output_cache = {}
+    for i, (q,a) in enumerate(zip(questions, answers)):
+        output_cache[(q,a)] = {
+            'logprobs': output_logprobs[i]
         }
-    
-    with open(f"outputs_cache_{model_name}.pkl", "wb") as f:
-        pickle.dump(outputs_cache, f)
 
-    print("Cached output logprobs")
+    model_sample_wise_aa_acc = calc_acc(labels, output_logprobs)
+    print(f"model_sample_wise_aa_acc: {model_sample_wise_aa_acc}")
+
+    with open(f"outputs_cache_{model_name}_contrast.pkl", "wb") as f:
+        pickle.dump(output_cache, f)
 
 def run_rep_reading_for_model(
         model_name,
@@ -281,7 +278,6 @@ def run_rep_reading_for_model(
     test_cors = -1
     for t, eval_data in datasets:
         if not eval_data: continue
-
         H_tests = rep_pipeline(
             eval_data['data'],
             rep_token=rep_token,
@@ -362,12 +358,16 @@ def run_rep_reading_for_model(
 # %%
 import pickle
 
-def merge_baselines(model_name, user_tag, assistant_tag, output_logprobs_baseline_merged, output_logprobs_truthful_merged):
-    with open(f"outputs_cache_{model_name}.pkl", "rb") as f:
-        outputs_cache = pickle.load(f)
+def merge_baselines(model_name, user_tag, assistant_tag):
+    
+    with open(f"outputs_cache_{model_name}_baseline.pkl", "rb") as f:
+        output_logprobs_baseline_merged = pickle.load(f)
+
+    with open(f"outputs_cache_{model_name}_truthful.pkl", "rb") as f:
+        output_logprobs_truthful_merged = pickle.load(f)
 
     with open(f"outputs_cache_{model_name}_contrast.pkl", "rb") as f:
-        outputs_cache_contrast = pickle.load(f)
+        outputs_cache = pickle.load(f)
 
     def get_one_hot_prediction(logprobs):
         prediction = np.argmax(logprobs)
@@ -383,37 +383,37 @@ def merge_baselines(model_name, user_tag, assistant_tag, output_logprobs_baselin
     from collections import defaultdict
     qa_output = defaultdict(lambda: defaultdict(list))
     for (question, answer), logprob in outputs_cache.items():
-        question_stripped = question.replace(user_tag, "").strip()
+        question_stripped = question.replace(user_tag, "").replace(assistant_tag, "").strip()
         qa_output[question_stripped]['answer'].append(answer)
         qa_output[question_stripped]['logprobs_control'].append(logprob['logprobs'])
 
     for i, question in enumerate(qa_output.keys()):
         labels_for_q = labels[i]
         question_stripped = question.replace(user_tag, "")
+        assert len(labels_for_q) == len(qa_output[question_stripped]['answer']), f"labels: {len(labels_for_q)}, answers: {len(qa_output[question_stripped]['answer'])}"
         for i, answer in enumerate(qa_output[question_stripped]['answer']):
             qa_output[question_stripped]['labels'].append(labels_for_q[i])
         one_hot_controlled = get_one_hot_prediction(qa_output[question_stripped]['logprobs_control'])
         qa_output[question_stripped]['controlled_prediction'] = one_hot_controlled
         qa_output[question_stripped]['baseline_prediction'] = get_one_hot_prediction(output_logprobs_baseline_merged[question_stripped])
         qa_output[question_stripped]['truthful_prediction'] = get_one_hot_prediction(output_logprobs_truthful_merged[question_stripped])
-        qa_output[question_stripped]['contrast_prediction'] = get_one_hot_prediction(outputs_cache_contrast[(question, answer)]['logprobs'])
-
         # %%
-        with open(f"tqa_rep_predictions_{model_name}.pkl", "rb") as f:
-            tqa_rep_predictions = pickle.load(f)
-        # merge tqa_rep_predictions with qa_output
-        for question, val in tqa_rep_predictions.items():
-            answers, prediction = val['answers'], val['rep_prediction']
-            qa_output[question]['rep_prediction'] = prediction
-            assert len(prediction) == len(qa_output[question]['labels'])
+    with open(f"tqa_rep_predictions_{model_name}.pkl", "rb") as f:
+        tqa_rep_predictions = pickle.load(f)
+    # merge tqa_rep_predictions with qa_output
+    for question, val in tqa_rep_predictions.items():
+        answers, prediction = val['answers'], val['rep_prediction']
+        assert len(prediction) == len(qa_output[question]['labels']), f"prediction: {len(prediction)}, labels: {len(qa_output[question]['labels'])}"
+        qa_output[question]['rep_prediction'] = prediction
+            
 
-        with open(f"tqa_rep_predictions_{model_name}_contrast.pkl", "rb") as f:
-            tqa_rep_predictions = pickle.load(f)
-        # merge tqa_rep_predictions with qa_output
-        for question, val in tqa_rep_predictions.items():
-            answers, prediction = val['answers'], val['rep_prediction']
-            qa_output[question]['contrast_prediction'] = prediction
-            assert len(prediction) == len(qa_output[question]['labels'])
+    with open(f"tqa_rep_predictions_{model_name}_contrast.pkl", "rb") as f:
+        tqa_rep_predictions = pickle.load(f)
+    # merge tqa_rep_predictions with qa_output
+    for question, val in tqa_rep_predictions.items():
+        answers, prediction = val['answers'], val['rep_prediction']
+        qa_output[question]['contrast_prediction'] = prediction
+        assert len(prediction) == len(qa_output[question]['labels'])
 
         # %%
         #save the qa_output
@@ -428,7 +428,7 @@ def merge_baselines(model_name, user_tag, assistant_tag, output_logprobs_baselin
 # calculate accuracy for each question
 from sklearn.metrics import confusion_matrix
 
-def get_confusion_matrices(qa_output):
+def get_confusion_matrices(qa_output, model_name):
     control_correct = []
     baseline_correct = []
     rep_correct = []
@@ -451,19 +451,19 @@ def get_confusion_matrices(qa_output):
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Incorrect","Correct"])
     disp.plot()
     disp.ax_.set(xlabel='Baseline', ylabel='Representation Control')
-    plt.savefig("baseline_vs_representation_control.png")
+    plt.savefig(f"baseline_vs_representation_control_{model_name}.png")
 
     cm = confusion_matrix(control_correct, rep_correct, labels=[False,True])
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Incorrect","Correct"])
     disp.plot()
     disp.ax_.set(xlabel='Representation Reading', ylabel='Representation Control')
-    plt.savefig("representation_control_vs_representation_reading.png")
+    plt.savefig(f"representation_control_vs_representation_reading_{model_name}.png")
 
     cm = confusion_matrix(baseline_correct, rep_correct, labels=[False,True])
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Incorrect","Correct"])
     disp.plot()
     disp.ax_.set(xlabel='Representation Reading', ylabel='Baseline')
-    plt.savefig("baseline_vs_representation_reading.png")
+    plt.savefig(f"baseline_vs_representation_reading_{model_name}.png")
 
 
 # save the qa_output to a pandas dataframe
@@ -493,7 +493,7 @@ def main(
 ):
     print("model_name_or_path", model_name_or_path)
     if "llama" in model_name_or_path.lower():
-        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, device_map="auto")
+        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, device_map="sequential")
         use_fast_tokenizer = "LlamaForCausalLM" not in model.config.architectures
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, use_fast=use_fast_tokenizer, padding_side="left", legacy=False)
         tokenizer.pad_token_id = 0 if tokenizer.pad_token_id is None else tokenizer.pad_token_id
@@ -501,22 +501,36 @@ def main(
     else:
         raise NotImplementedError
 
-    # get the baselines
+    # # get the baselines
     model.eval()
-    # output_logprobs_baseline_merged, output_logprobs_truthful_merged = get_baselines_for_model(model, tokenizer)
-    # get_baselines_for_model(model, tokenizer)
-    # sanity: run a random inference on the model
-    
-    get_tqa_outputs(model, ["What is the capital of France?"], ["Paris"], [[1]], tokenizer, batch_size=batch_size)
-    # running this dips accuracy from 0.52 to 0.29...
-    
-    # get_tqa_outputs(model, ["What is the capital of France?"], ["Paris"], [[1]], tokenizer, batch_size=batch_size)
-    # a,b = np.array(a), np.array(b)
-    # get a path-friendly model name
-    model_name = model_name_or_path.replace("/", "_").replace(" ", "_")
 
-    torch.cuda.empty_cache()
+    model_name = model_name_or_path.replace("/", "_").replace(" ", "_")
+    get_baselines_for_model(model_name=model_name, model=model, tokenizer=tokenizer)
+    
+    del model
     gc.collect()
+    torch.cuda.empty_cache()
+
+    # # reinitialize the model
+    print("model_name_or_path", model_name_or_path)
+    if "llama" in model_name_or_path.lower():
+        model = AutoModelForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, device_map="auto")
+        use_fast_tokenizer = "LlamaForCausalLM" not in model.config.architectures
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, use_fast=use_fast_tokenizer, padding_side="left", legacy=False)
+        tokenizer.pad_token_id = 0 if tokenizer.pad_token_id is None else tokenizer.pad_token_id
+        tokenizer.bos_token_id = 1
+    else:
+        raise NotImplementedError
+    model.eval()
+    # # sanity: run a random inference on the model
+    # # a = model(**model.dummy_inputs).logits
+    # # get_tqa_outputs(model, ["What is the capital of France?"], ["Paris"], [[1]], tokenizer, batch_size=batch_size)
+    # # running this dips accuracy from 0.52 to 0.29...
+    
+    # # get_tqa_outputs(model, ["What is the capital of France?"], ["Paris"], [[1]], tokenizer, batch_size=batch_size)
+    # # a,b = np.array(a), np.array(b)
+    # # get a path-friendly model name
+
 
     # get the rep reading_results
     run_rep_reading_for_model(
@@ -534,13 +548,20 @@ def main(
         seed,
     )
 
+    del model
+    gc.collect()
+    torch.cuda.empty_cache()
+
     # get the rep control results
-    contrast_model = ContrastVecLlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, device_map="auto")
+    contrast_model = ContrastVecLlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, device_map="sequential")
 
     if "7b" in model_name_or_path:
-        layer_ids = np.arange(8, 32, 3).tolist() # 7B
+        layer_ids = np.arange(0, 32, 2).tolist() # 7B
     elif "13b" in model_name_or_path:
         layer_ids = np.arange(10, 40, 3).tolist() #13B
+
+    print("layer_ids", layer_ids)
+    # mistral: 
 
     run_rep_control_for_model(
         tokenizer=tokenizer,
@@ -551,26 +572,26 @@ def main(
 
     # get reading results for the contrast model
 
-    model_name = model_name_or_path.replace("/", "_").replace(" ", "_") + "_contrast"
-    run_rep_reading_for_model(
-        model_name,
-        task,
-        ntrain,
-        contrast_model,
-        tokenizer,
-        n_components,
-        rep_token,
-        max_length,
-        n_difference,
-        direction_method,
-        batch_size,
-        seed,
-    )
+    # contrast_model_name = model_name_or_path.replace("/", "_").replace(" ", "_") + "_contrast"
+    # run_rep_reading_for_model(
+    #     contrast_model_name,
+    #     task,
+    #     ntrain,
+    #     contrast_model,
+    #     tokenizer,
+    #     n_components,
+    #     rep_token,
+    #     max_length,
+    #     n_difference,
+    #     direction_method,
+    #     batch_size,
+    #     seed,
+    # )
 
     # merge the baselines
-    qa_output = merge_baselines(model_name, user_tag="[INST] ", assistant_tag="[INST] ", output_logprobs_baseline_merged=output_logprobs_baseline_merged, output_logprobs_truthful_merged=output_logprobs_truthful_merged)
+    qa_output = merge_baselines(model_name, user_tag="[INST] ", assistant_tag="[INST] ")
     # get the confusion matrices
-    get_confusion_matrices(qa_output)
+    get_confusion_matrices(qa_output, model_name)
     # save the qa_output to a csv
     to_csv(qa_output, model_name)
 
