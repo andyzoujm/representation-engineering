@@ -14,8 +14,9 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "transformers",
     "accelerate",
+    "scikit-learn",
+    "transformers",
 ]
 
 [tool.setuptools]
