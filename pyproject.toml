@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "repe"
+version = "0.1.0"
+description = "Representation Engineering"
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "transformers",
+    "accelerate",
+]
+
+[tool.setuptools]
+packages = ["repe"]
+
+[project.urls]
+Homepage = "https://github.com/andyzoujm/representation-engineering"
+Issues = "https://github.com/andyzoujm/representation-engineering/issues"
