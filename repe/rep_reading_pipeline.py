@@ -65,7 +65,7 @@ class RepReadingPipeline(Pipeline):
     def postprocess(self, outputs):
         return outputs
 
-    def _forward(self, model_inputs, rep_token, hidden_layers, rep_reader=None, component_index=0, which_hidden_states=None):
+    def _forward(self, model_inputs, rep_token, hidden_layers, rep_reader=None, component_index=0, which_hidden_states=None, pad_token_id=None):
         """
         Args:
         - which_hidden_states (str): Specifies which part of the model (encoder, decoder, or both) to compute the hidden states from. 
