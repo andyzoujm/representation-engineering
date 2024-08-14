@@ -22,8 +22,9 @@ class RepReadingPipeline(Pipeline):
         hidden_states_layers = {}
         for layer in hidden_layers:
             hidden_states = outputs['hidden_states'][layer]
-            hidden_states =  hidden_states[:, rep_token, :]
-            # hidden_states_layers[layer] = hidden_states.cpu().to(dtype=torch.float32).detach().numpy()
+            hidden_states =  hidden_states[:, rep_token, :].detach()
+            if hidden_states.dtype == torch.bfloat16:
+                hidden_states = hidden_states.float()
             hidden_states_layers[layer] = hidden_states.detach()
 
         return hidden_states_layers
