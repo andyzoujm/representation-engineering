@@ -99,7 +99,7 @@ class RepReadingPipeline(Pipeline):
     
     def _validate_params(self, n_difference, direction_method):
         # validate params for get_directions
-        if direction_method == 'clustermean':
+        if direction_method == 'cluster_mean':
             assert n_difference == 1, "n_difference must be 1 for clustermean"
 
     def get_directions(
