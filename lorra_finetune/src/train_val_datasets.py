@@ -91,6 +91,7 @@ class AlpacaSupervisedDataset(Dataset):
             truncation=True,
             max_length=self.max_res_len,
             return_tensors="pt",
+            add_special_tokens=False,
         )
         combined_input_ids = torch.cat([tokenized_inputs["input_ids"], response_tokenized_inputs["input_ids"]], dim=1)
         combined_attention_mask = torch.cat([tokenized_inputs["attention_mask"], response_tokenized_inputs["attention_mask"]], dim=1)
