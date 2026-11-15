@@ -60,7 +60,7 @@ def honesty_function_dataset(data_path: str, tokenizer: PreTrainedTokenizer, use
 
     # Create test data
     reshaped_data = np.array([[honest, untruthful] for honest, untruthful in zip(honest_statements[:-1], untruthful_statements[1:])]).flatten()
-    test_data = reshaped_data[ntrain:ntrain*2].tolist()
+    test_data = reshaped_data[ntrain*2:ntrain*3].tolist()
 
     print(f"Train data: {len(train_data)}")
     print(f"Test data: {len(test_data)}")
